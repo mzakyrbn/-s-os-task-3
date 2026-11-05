@@ -6,8 +6,37 @@ void allocateWithMallocFree();
 void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss);
 
 int main() {
-    allocateWithMallocFree();
+	while (1) {
+		banner_call();
+		printf("1. Allocate with malloc/free\n");
+		printf("2. Allocate with mmap/munmap\n");
+		printf("3. Eksekusi Fitur Variasi Kelompok\n");
+		printf("4. Exit\n");
+		printf("input: ");
 
+		char choice;
+		scanf("%c", &choice);
+		
+		if (choice == '1') {
+
+		}
+
+		else if (choice == '2') {
+
+		}
+
+		else if (choice == '3') {
+
+		}
+
+		else if (choice == '4') {
+			break;
+		}
+
+		else {
+			printf("Pilihan tidak valid. Harap masukkan pilihan dengan benar.\n");
+		}
+	}
     return 0;
 }
 
