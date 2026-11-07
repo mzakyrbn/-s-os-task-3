@@ -1,9 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
+#include <stdint.h>
+#include <unistd.h>
 
 void allocateWithMallocFree();
 void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss);
+void mmapThreshold();
 
 int main() {
 	while (1) {
@@ -15,7 +19,7 @@ int main() {
 		printf("input: ");
 
 		char choice;
-		scanf("%c", &choice);
+		scanf(" %c", &choice);
 		
 		if (choice == '1') {
 
@@ -26,7 +30,7 @@ int main() {
 		}
 
 		else if (choice == '3') {
-
+            mmapThreshold();
 		}
 
 		else if (choice == '4') {
@@ -96,4 +100,56 @@ void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss) {
     }
 
     fclose(file);
+}
+
+void mmapThreshold() {
+    int THRESHOLD = 128;
+    printf("--- Varian 6: mmap Threshold ---\n");
+    printf("M_MMAP_THRESHOLD = %d KB\n\n", THRESHOLD);
+    printf("%-9s %-12s %-15s %-15s %s\n", "Ukuran", "delta brk", "alamat", "ujung brk", "Hasil");
+
+    mallopt(M_MMAP_THRESHOLD, THRESHOLD * 1024);
+        
+    int numbers[] = {1, 2, 4, 8, 16, 32, 64, 96, 120, 127, 128, 129, 192, 256, 512, 1024};
+    int length = sizeof(numbers) / sizeof(numbers[0]);
+    void *ptr[length];
+    int first_mmap_kb = -1;
+
+    for (int i = 0; i < length; i++) {
+        size_t bytes = (size_t)numbers[i] * 1024;
+
+        // posisi ujung heap sebelum malloc
+        void *brk_awal = sbrk(0);
+
+        ptr[i] = malloc(bytes);
+
+        // posisi ujung heap setelah malloc
+        void *brk_akhir = sbrk(0);
+
+        // selisih sebelum dan sesudah malloc
+        long delta = (char *)brk_akhir - (char *)brk_awal;
+        
+        // alamat pointer di bawah ujung brk, maka dialokasikan di heap.
+        // di atas ujung brk, maka dialokasikan via mmap.
+        const char *lokasi;
+        if ((uintptr_t)ptr[i] < (uintptr_t)brk_akhir) {
+            lokasi = "heap";
+        } else {
+            lokasi = "mmap";
+            if (first_mmap_kb == -1) {
+                first_mmap_kb = numbers[i];
+            }
+        }
+
+        printf("%-4d KB %-+12ld %-15p %-15p %s\n", numbers[i], delta, ptr[i], brk_akhir, lokasi);
+    }
+
+    if (first_mmap_kb != -1) {
+        printf("\n[Hasil] malloc mulai beralih ke mmap pada ukuran %d KB (threshold %d KB)\n", first_mmap_kb, THRESHOLD);
+    }
+
+    // release memory
+    for (int i = 0; i < length; i++) {
+        free(ptr[i]);
+    }
 }
