@@ -15,6 +15,7 @@ void allocateWithMallocFree();
 void allocateWithMmapMunmap();
 void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss);
 void mmapThreshold();
+void mmapThresholdLog(const char *log);
 static void mmap_log_printf(FILE *std_log, int sys_log, const char *format, ...);
 
 int main() {
@@ -22,7 +23,7 @@ int main() {
 		banner_call();
 		printf("1. Allocate with malloc/free\n");
 		printf("2. Allocate with mmap/munmap\n");
-		printf("3. Eksekusi Fitur Variasi Kelompok\n");
+		printf("3. Ukuran batas mmap pada malloc\n");
 		printf("4. Exit\n");
 		printf("input: ");
 
@@ -226,9 +227,14 @@ void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss) {
 
 void mmapThreshold() {
     int THRESHOLD = 128;
-    printf("--- Varian 6: mmap Threshold ---\n");
-    printf("M_MMAP_THRESHOLD = %d KB\n\n", THRESHOLD);
-    printf("%-9s %-12s %-15s %-15s %s\n", "Ukuran", "delta brk", "alamat", "ujung brk", "Hasil");
+    char log_buffer[4096] = "";
+    int offset = 0;
+
+    offset += snprintf(log_buffer + offset, sizeof(log_buffer) - offset,
+                       "--- Varian 6: mmap Threshold ---\n"
+                       "M_MMAP_THRESHOLD = 128 KB\n\n"
+                       "%-9s %-12s %-15s %-15s %s\n",
+                       "Ukuran", "delta brk", "alamat", "ujung brk", "Hasil");
 
     mallopt(M_MMAP_THRESHOLD, THRESHOLD * 1024);
         
@@ -263,15 +269,49 @@ void mmapThreshold() {
             }
         }
 
-        printf("%-4d KB %-+12ld %-15p %-15p %s\n", numbers[i], delta, ptr[i], brk_akhir, lokasi);
+        offset += snprintf(log_buffer + offset, sizeof(log_buffer) - offset,
+                    "%-4d KB %-+12ld %-15p %-15p %s\n",
+                    numbers[i], delta, ptr[i], brk_akhir, lokasi);
     }
 
     if (first_mmap_kb != -1) {
-        printf("\n[Hasil] malloc mulai beralih ke mmap pada ukuran %d KB (threshold %d KB)\n", first_mmap_kb, THRESHOLD);
+        offset += snprintf(log_buffer + offset, sizeof(log_buffer) - offset, "\n[Hasil] malloc mulai beralih ke mmap pada ukuran %d KB (threshold %d KB)\n", first_mmap_kb, THRESHOLD);
     }
 
-    // release memory
+    printf("%s", log_buffer);
+    mmapThresholdLog(log_buffer);
+
+    // free memory
     for (int i = 0; i < length; i++) {
         free(ptr[i]);
+    }
+}
+
+void mmapThresholdLog(const char *log) {
+    // get current time
+    time_t now = time(NULL);
+    struct tm *currtime = localtime(&now);
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", currtime);
+
+    // naming file
+    const char *method = "mmapthreshold";
+    char file_std[128];
+    char file_sys[128];
+    snprintf(file_std, sizeof(file_std), "06-%s_std-%s.txt", method, timestamp);
+    snprintf(file_sys, sizeof(file_sys), "06-%s_sys-%s.txt", method, timestamp);
+
+    // write using standard C library
+    FILE *pF = fopen(file_std, "w");
+    if (pF) {
+        fprintf(pF, "%s", log);
+        fclose(pF);
+    }
+
+    // write using system call
+    int fd = open(file_sys, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        write(fd, log, strlen(log));
+        close(fd);
     }
 }
