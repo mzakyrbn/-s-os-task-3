@@ -16,7 +16,6 @@ void allocateWithMmapMunmap();
 void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss);
 void mmapThreshold();
 void mmapThresholdLog(const char *log);
-void banner_call(void);
 static void mmap_log_printf(FILE *std_log, int sys_log, const char *format, ...);
 
 int main() {
@@ -315,6 +314,4 @@ void mmapThresholdLog(const char *log) {
         write(fd, log, strlen(log));
         close(fd);
     }
-
-
 }
