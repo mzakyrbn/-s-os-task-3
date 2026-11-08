@@ -16,7 +16,7 @@ void allocateWithMmapMunmap();
 void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss);
 void mmapThreshold();
 void mmapThresholdLog(const char *log);
-static void mmap_log_printf(FILE *std_log, int sys_log, const char *format, ...);
+static void log_printf(FILE *std_log, int sys_log, const char *format, ...);
 
 int main() {
 	while (1) {
@@ -53,8 +53,8 @@ int main() {
     return 0;
 }
 
-/* Print each mmap run line to the terminal and both required log formats. */
-static void mmap_log_printf(FILE *std_log, int sys_log, const char *format, ...) {
+/* Print each log line to the terminal and to both log files (std + syscall). */
+static void log_printf(FILE *std_log, int sys_log, const char *format, ...) {
     char buffer[1024];
     va_list args;
 
@@ -119,8 +119,8 @@ void allocateWithMmapMunmap() {
     }
 
     getMemoryUsage(&vmsize_before, &vmrss_before);
-    mmap_log_printf(std_log, sys_log, "You picked mmap/munmap.\n");
-    mmap_log_printf(std_log, sys_log, "VmSize Before: %lu KB | VmRSS Before: %lu KB\n",
+    log_printf(std_log, sys_log, "You picked mmap/munmap.\n");
+    log_printf(std_log, sys_log, "VmSize Before: %lu KB | VmRSS Before: %lu KB\n",
                     vmsize_before, vmrss_before);
 
     printf("How many integers to allocate: ");
@@ -145,63 +145,119 @@ void allocateWithMmapMunmap() {
                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (memory == MAP_FAILED) {
         perror("mmap");
-        mmap_log_printf(std_log, sys_log, "mmap failed: %s\n", strerror(errno));
+        log_printf(std_log, sys_log, "mmap failed: %s\n", strerror(errno));
         close(sys_log);
         fclose(std_log);
         return;
     }
 
     for (int i = 0; i < input; i++) memory[i] = i + 1;
-    mmap_log_printf(std_log, sys_log, "Starting memory address: %p\n", (void *)memory);
-    mmap_log_printf(std_log, sys_log, "Printing first 10 values in reverse order:\n");
+    log_printf(std_log, sys_log, "Starting memory address: %p\n", (void *)memory);
+    log_printf(std_log, sys_log, "Printing first 10 values in reverse order:\n");
     int limit = input < 10 ? input : 10;
     for (int i = 0; i < limit; i++) {
-        mmap_log_printf(std_log, sys_log, "%d\n", memory[input - 1 - i]);
+        log_printf(std_log, sys_log, "%d\n", memory[input - 1 - i]);
     }
-    mmap_log_printf(std_log, sys_log, "\n");
+    log_printf(std_log, sys_log, "\n");
 
     getMemoryUsage(&vmsize_after, &vmrss_after);
-    mmap_log_printf(std_log, sys_log, "VmSize After: %lu KB | VmRSS After: %lu KB\n", vmsize_after, vmrss_after);
+    log_printf(std_log, sys_log, "VmSize After: %lu KB | VmRSS After: %lu KB\n", vmsize_after, vmrss_after);
     if (munmap(memory, bytes) != 0) perror("munmap");
     close(sys_log);
     fclose(std_log);
 }
 
 void allocateWithMallocFree() {
-    unsigned long vmsize = 0, vmrss = 0;
+    unsigned long vmsize_before = 0, vmrss_before = 0;
+    unsigned long vmsize_after = 0, vmrss_after = 0;
     int input;
 
-    getMemoryUsage(&vmsize, &vmrss);
-
+    // ukur memori sebelum alokasi dan tampilkan di terminal
+    getMemoryUsage(&vmsize_before, &vmrss_before);
     printf("You picked malloc/free.\n");
-    printf("VmSize Before: %lu KB | VmRSS Before: %lu KB\n", vmsize, vmrss);
+    printf("VmSize Before: %lu KB | VmRSS Before: %lu KB\n", vmsize_before, vmrss_before);
+
     printf("How many integers to allocate: ");
+    if (scanf("%d", &input) != 1 || input <= 0 || (size_t)input > SIZE_MAX / sizeof(int)) {
+        printf("Please enter a positive integer count within the supported range.\n");
+        return;
+    }
     printf("\n");
 
-    scanf("%d", &input);
+    // input valid -> buat berkas log
+    // nama berkas: XX-malloc_std-[timestamp].txt dan XX-malloc_sys-[timestamp].txt
+    char timestamp[32];
+    time_t now = time(NULL);
+    struct tm *local = localtime(&now);
+    if (!local || strftime(timestamp, sizeof(timestamp), "%Y%m%d-%H%M%S", local) == 0) {
+        snprintf(timestamp, sizeof(timestamp), "unknown-time");
+    }
+    char std_name[96], sys_name[96];
+    snprintf(std_name, sizeof(std_name), "06-malloc_std-%s.txt", timestamp);
+    snprintf(sys_name, sizeof(sys_name), "06-malloc_sys-%s.txt", timestamp);
 
-    int *memory = malloc(input * sizeof(int));
+    // log 1: Standard C Library (fopen / fprintf / fclose)
+    FILE *std_log = fopen(std_name, "w");
+    if (!std_log) {
+        perror("fopen malloc log");
+        return;
+    }
+
+    // log 2: System Call (open / write / close)
+    int sys_log = open(sys_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (sys_log < 0) {
+        perror("open malloc log");
+        fclose(std_log);
+        return;
+    }
+
+    // baris yang sudah tampil di terminal di atas, kini dicatat ke kedua log
+    char header[256];
+    int header_len = snprintf(header, sizeof(header),
+                              "You picked malloc/free.\n"
+                              "VmSize Before: %lu KB | VmRSS Before: %lu KB\n"
+                              "Integer count entered: %d\n",
+                              vmsize_before, vmrss_before, input);
+    fprintf(std_log, "%s", header);
+    if (header_len > 0 && (size_t)header_len < sizeof(header)) {
+        (void)write(sys_log, header, (size_t)header_len);
+    }
+
+    int *memory = malloc((size_t)input * sizeof(int));
+    if (memory == NULL) {
+        perror("malloc");
+        log_printf(std_log, sys_log, "malloc failed: %s\n", strerror(errno));
+        close(sys_log);
+        fclose(std_log);
+        return;
+    }
+
+    // mulai masukkan 
 
     for (int i = 0; i < input; i++) {
         memory[i] = i + 1;
     }
 
-    printf("Starting memory address: %p\n", memory);
-    printf("Printing first 10 values in reverse order:\n");
+    log_printf(std_log, sys_log, "Starting memory address: %p\n", (void *)memory);
+    log_printf(std_log, sys_log, "Printing first 10 values in reverse order:\n");
 
     int limit = input < 10 ? input : 10;
-
     for (int i = input - 1; i >= input - limit; i--) {
-        printf("%d\n", memory[i]);
+        log_printf(std_log, sys_log, "%d\n", memory[i]);
     }
-    printf("\n");
+    log_printf(std_log, sys_log, "\n");
 
-    getMemoryUsage(&vmsize, &vmrss);
-
-    printf("VmSize After: %lu KB | VmRSS After: %lu KB\n", vmsize, vmrss);
+    getMemoryUsage(&vmsize_after, &vmrss_after);
+    log_printf(std_log, sys_log, "VmSize After: %lu KB | VmRSS After: %lu KB\n",
+               vmsize_after, vmrss_after);
 
     free(memory);
     memory = NULL;
+
+    close(sys_log);
+    fclose(std_log);
+
+    printf("Log saved to %s and %s\n\n", std_name, sys_name);
 }
 
 void getMemoryUsage(unsigned long *vmsize, unsigned long *vmrss) {
