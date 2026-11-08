@@ -11,4 +11,4 @@ dynamic: main.c banner.c banner.h
 	gcc $(CFLAGS) banner.c main.c -o final
 
 clean:
-	del /Q final.exe final_static.exe 2>NUL
+	rm final final_static

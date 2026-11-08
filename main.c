@@ -31,7 +31,7 @@ int main() {
 		scanf(" %c", &choice);
 		
 		if (choice == '1') {
-
+			allocateWithMallocFree();
 		}
 
 		else if (choice == '2') {
